@@ -1,0 +1,92 @@
+name: Build and Push Custom Image
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - apps.json
+      - .github/workflows/build-custom-image.yml
+  workflow_dispatch:
+
+env:
+  FRAPPE_PATH: https://github.com/svora2/frappe
+  FRAPPE_BRANCH: version-15
+  IMAGE_NAME: ghcr.io/svora2/frappe-build
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup QEMU
+        uses: docker/setup-qemu-action@v4
+        with:
+          image: tonistiigi/binfmt:latest
+          platforms: all
+
+      - name: Setup Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Inject token for private lms repo into apps.json
+        env:
+          LMS_REPO_TOKEN: ${{ secrets.LMS_REPO_TOKEN }}
+        run: |
+          python3 - <<'PY'
+          import json
+          import os
+
+          with open("apps.json") as f:
+              apps = json.load(f)
+
+          token = os.environ["LMS_REPO_TOKEN"]
+          for app in apps:
+              if app["url"].rstrip("/").endswith("/lms"):
+                  app["url"] = app["url"].replace(
+                      "https://github.com/",
+                      f"https://x-access-token:{token}@github.com/",
+                  )
+
+          with open("/tmp/apps.build.json", "w") as f:
+              json.dump(apps, f)
+          PY
+
+      - name: Login to GHCR
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+
+      - name: Build and push image
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: images/layered/Containerfile
+          build-args: |
+            FRAPPE_IMAGE_PREFIX=frappe
+            FRAPPE_PATH=${{ env.FRAPPE_PATH }}
+            FRAPPE_BRANCH=${{ env.FRAPPE_BRANCH }}
+            CACHE_BUST=${{ github.run_id }}
+          platforms: linux/amd64
+          push: true
+          load: true
+          secrets: |
+            id=apps_json,src=/tmp/apps.build.json
+          tags: |
+            ${{ env.IMAGE_NAME }}:latest
+            ${{ env.IMAGE_NAME }}:${{ github.sha }}
+
+      - name: Smoke test image contents
+        run: |
+          docker run --rm --entrypoint bash "${{ env.IMAGE_NAME }}:${{ github.sha }}" -lc \
+            "test -d /home/frappe/frappe-bench/apps/frappe && \
+             test -d /home/frappe/frappe-bench/apps/payments && \
+             test -d /home/frappe/frappe-bench/apps/lms"
