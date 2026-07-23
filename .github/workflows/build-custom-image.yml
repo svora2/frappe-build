@@ -78,15 +78,23 @@ jobs:
           platforms: linux/amd64
           push: true
           load: true
-          secrets: |
-            id=apps_json,src=/tmp/apps.build.json
+          secret-files: |
+            apps_json=/tmp/apps.build.json
           tags: |
             ${{ env.IMAGE_NAME }}:latest
             ${{ env.IMAGE_NAME }}:${{ github.sha }}
 
       - name: Smoke test image contents
         run: |
-          docker run --rm --entrypoint bash "${{ env.IMAGE_NAME }}:${{ github.sha }}" -lc \
-            "test -d /home/frappe/frappe-bench/apps/frappe && \
-             test -d /home/frappe/frappe-bench/apps/payments && \
-             test -d /home/frappe/frappe-bench/apps/lms"
+          docker run --rm --entrypoint bash "${{ env.IMAGE_NAME }}:${{ github.sha }}" -lc '
+            ok=1
+            for app in frappe payments lms; do
+              if [ -d "/home/frappe/frappe-bench/apps/$app" ]; then
+                echo "OK: $app present"
+              else
+                echo "MISSING: $app"
+                ok=0
+              fi
+            done
+            [ "$ok" = 1 ]
+          '
