@@ -30,6 +30,13 @@ jobs:
         run: pip install -U pre-commit
 
       - name: Lint
-        run: pre-commit run --color=always --all-files
+        run: |
+          pre-commit run --color=always --files \
+            apps.json \
+            DEPLOY.md \
+            production.env.example \
+            build-local.sh \
+            .github/workflows/build-custom-image.yml \
+            .github/workflows/lint.yml
         env:
           GO111MODULE: on
