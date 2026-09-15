@@ -6,6 +6,7 @@ on:
       - main
     paths:
       - apps.json
+      - images/layered/Containerfile
       - .github/workflows/build-custom-image.yml
   workflow_dispatch:
 
