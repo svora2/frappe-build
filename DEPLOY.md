@@ -81,14 +81,44 @@ docker compose --project-name frappelms exec backend \
 Visit `https://your-domain.com` (or `http://server-ip:8080` if you skipped
 the proxy) and log in as `Administrator`.
 
-## Updating later
+## Adding features and redeploying
 
-New commits to `frappe`, `payments`, or `lms` don't redeploy automatically —
-re-run the "Build and Push Custom Image" GitHub Action (or push a change to
-`apps.json` here), then on the server:
+The loop for shipping a change, end to end:
+
+### 1. Develop and test locally
+
+Make the change in the dev bench (`development/frappe-bench/apps/lms` or
+`apps/frappe`/`apps/payments`, whichever app it belongs to). Test it live
+there first via `bench start` against your `dev.localhost` site before it
+ever touches production.
+
+### 2. Push the change to the app's own repo
+
+```shell
+cd development/frappe-bench/apps/lms   # or apps/frappe, apps/payments
+git add -A
+git commit -m "describe the change"
+git push origin main
+```
+
+### 3. Trigger a rebuild
+
+Pushing to `svora2/lms` (or `frappe`/`payments`) does **not** auto-trigger a
+rebuild — `build-custom-image.yml` only watches for changes inside this repo
+(`apps.json`, `images/layered/Containerfile`, the workflow file itself).
+Since `apps.json` pins to `branch: "main"` rather than a fixed commit, any
+manual trigger picks up whatever is latest on `main` automatically.
+
+Go to `github.com/svora2/frappe-build` → **Actions** → **Build and Push
+Custom Image** → **Run workflow**.
+
+### 4. Deploy the new image to the server
 
 ```shell
 docker compose --project-name frappelms -f ~/gitops/frappelms.yaml pull
 docker compose --project-name frappelms -f ~/gitops/frappelms.yaml up -d
-docker compose --project-name frappelms exec backend bench migrate
+docker compose --project-name frappelms exec backend bench --site your-domain.com migrate
 ```
+
+The `migrate` step matters — it applies any new/changed doctypes, fields, or
+fixtures the change introduced. Skipping it can leave the site inconsistent.
